@@ -203,6 +203,14 @@ def main():
         default=False,
         action="store_true",
     )
+    
+    parser.add_argument(
+        "--custom-titles",
+        nargs="+",
+        help="Replace titles with custom titles from text files",
+        default=False,
+        dest="custom_titles",
+    )
 
     args = parser.parse_args()
     logger.setLevel(logging.DEBUG if args.debug else logging.INFO)
