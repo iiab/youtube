@@ -3,8 +3,10 @@
 # vim: ai ts=4 sts=4 et sw=4 nu
 
 import requests
+
 from contextlib import ExitStack
 from dateutil import parser as dt_parser
+from datetime import datetime
 from pytube import extract
 from zimscraperlib.download import stream_file
 from zimscraperlib.image.transformation import resize_image
@@ -193,6 +195,51 @@ def get_videos_json(playlist_id):
     save_json(YOUTUBE.cache_dir, fname, items)
     return items
 
+def subset_videos(videos, subset, max_videos):
+    """make a list of popular or recent videos"""
+    playlist_id = videos[0]["snippet"]["playlistId"]
+    video_ids = [video["contentDetails"]["videoId"] for video in videos]
+    # we get the video statistics via Youtube API
+    video_stats = {}
+    for i in range(0, len(video_ids), 50):
+        video_ids_chunk = video_ids[i : i + 50]
+        req = requests.get(
+            VIDEOS_API,
+            params={
+                "id": ",".join(video_ids_chunk),
+                "part": "statistics",
+                "key": YOUTUBE.api_key,
+            },
+        )
+        if req.status_code > 400:
+            logger.error(f"HTTP {req.status_code} Error response: {req.text}")
+        req.raise_for_status()
+        video_stats_json = req.json()
+        for video in video_stats_json["items"]:
+            video_stats[video["id"]] = video["statistics"]
+    # we add the statistics to the videos
+    for video in videos:
+        video["statistics"] = video_stats[video["contentDetails"]["videoId"]]
+    # we sort the videos
+    if subset == "popular":
+        videos = sorted(videos, key=lambda video: video["statistics"]["viewCount"], reverse=True)
+    elif subset == "recent":
+        videos = sorted(videos, key=lambda video: video["snippet"]["publishedAt"], reverse=True)
+    elif subset == "viewed-year":
+        for video in videos:
+            views = video["statistics"]["viewCount"]
+            published_at = video["snippet"]["publishedAt"]
+            now = datetime.now()
+            published_at = datetime.strptime(published_at, "%Y-%m-%dT%H:%M:%SZ")
+            years = now.year - published_at.year
+            video["statistics"]["views_per_year"] = int(views) / (years + 1)
+        videos = sorted(videos, key=lambda video: video["statistics"]["views_per_year"], reverse=True)
+    # we make a subset of the videos
+    if max_videos is not None:
+        videos = videos[:max_videos]
+    save_json(YOUTUBE.cache_dir, f"playlist_{playlist_id}_videos", videos)
+    return videos
+
 # Replace some video titles reading 2 text files, one for the video id and one for the title (called with --custom-titles)
 def replace_titles(items, custom_titles):
     """replace video titles with custom titles from file"""
@@ -216,18 +263,13 @@ def replace_titles(items, custom_titles):
     with ExitStack() as stack:
         files = [stack.enter_context(open(fname)) for fname in custom_titles_files]
         for f in files:
-            # log the number of lines in each file
             logger.debug(f"found {len(f.readlines())} custom titles in {f.name}")
-            # reset the file pointer to the beginning of the file
             f.seek(0)
-            # iterate through the lines in the file
             for line in f:
                 if line.startswith("https://"):
-                    # if the line starts with https://, extract the video id from the url
                     ids.append(extract.video_id(line))
                     logger.debug(f"found video id {ids[-1]}")
                 else:
-                    # otherwise, append the line to the titles list
                     titles.append(line.rstrip())
                     logger.debug(f"found title {titles[-1]}")
         

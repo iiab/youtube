@@ -24,7 +24,27 @@ def main():
         dest="collection_type",
     )
     parser.add_argument(
-        "--id", help="Youtube ID of the collection", required=True, dest="youtube_id"
+        "--subset", help="Subset of collection to download",
+        choices = ["recent", "popular", "viewed-year"],
+        default="recent",
+        dest="subset",
+    )
+    parser.add_argument(
+        "--max-videos",
+        help="Maximum number of videos to download, used with --subset=recent",
+        type=int,
+        dest="max_videos",
+    )
+    parser.add_argument(
+        "--subset-size",
+        help="Cumulative size of videos to download (in bytes), used with --subset=popular",
+        type=int,
+        dest="subset_size",
+    )
+    parser.add_argument(
+        "--id", help="Youtube ID of the collection",
+        required=True,
+        dest="youtube_id",
     )
     parser.add_argument("--api-key", help="Youtube API Token", required=True)
     parser.add_argument(
@@ -216,8 +236,19 @@ def main():
     logger.setLevel(logging.DEBUG if args.debug else logging.INFO)
 
     try:
+        # Check for invalid values
         if args.max_concurrency < 1:
             raise ValueError(f"Invalid concurrency value: {args.max_concurrency}")
+        # Check if --subset is used with either --max-videos or --subset-size
+        if args.subset and not (args.max_videos or args.subset_size):
+            raise ValueError(
+                "Cannot use --subset without --max-videos or --subset-size"
+            )
+        # Check if --max-videos or --subset-size is used without --subset
+        if (args.max_videos or args.subset_size) and not args.subset:
+            raise ValueError(
+                "Cannot use --max-videos or --subset-size without --subset"
+            )
         scraper = Youtube2Zim(**dict(args._get_kwargs()), youtube_store=YOUTUBE)
         return scraper.run()
     except Exception as exc:
@@ -225,7 +256,6 @@ def main():
         if args.debug:
             logger.exception(exc)
         return 1
-
 
 if __name__ == "__main__":
     sys.exit(main())

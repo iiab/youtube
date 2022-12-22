@@ -53,6 +53,7 @@ from .youtube import (
     get_channel_json,
     get_videos_authors_info,
     get_videos_json,
+    subset_videos,
     replace_titles,
     save_channel_branding,
     skip_deleted_videos,
@@ -65,6 +66,9 @@ class Youtube2Zim:
         self,
         collection_type,
         youtube_id,
+        subset,
+        max_videos,
+        subset_size,
         api_key,
         video_format,
         low_quality,
@@ -101,6 +105,9 @@ class Youtube2Zim:
         self.youtube_id = youtube_id
         self.api_key = api_key
         self.dateafter = dateafter
+        self.subset = subset
+        self.max_videos = max_videos
+        self.subset_size = subset_size
 
         # video-encoding info
         self.video_format = video_format
@@ -130,15 +137,6 @@ class Youtube2Zim:
             tmp_dir = Path(tmp_dir).expanduser().resolve()
             tmp_dir.mkdir(parents=True, exist_ok=True)
         self.build_dir = Path(tempfile.mkdtemp(dir=tmp_dir))
-
-        # logging
-        log =self.output_dir / "run.log"
-        if not log.exists() or log.stat().st_size == 0:
-            with open(log, "a") as f:
-                f.write(f"Log file created at {datetime.datetime.now()}\n====================\n")
-        if log.exists() and log.stat().st_size > 0:
-            with open(log, "a") as f:
-                f.write(f"\n\n\nLog for {self.name} started on {datetime.datetime.now()}\n====================\n")
 
         # process-related
         self.playlists = []
@@ -483,7 +481,9 @@ class Youtube2Zim:
             # we only return video_ids that we'll use later on. per-playlist JSON stored
             for playlist in self.playlists:
                 videos_json = get_videos_json(playlist.playlist_id)
-                # filter in videos within date range and filter away deleted videos
+                if self.subset and self.max_videos:
+                    videos_json = subset_videos(videos_json, self.subset, self.max_videos)
+
                 # we replace videos titles if --custom-titles is used
                 if self.custom_titles:
                     replace_titles(videos_json, self.custom_titles)
@@ -528,6 +528,23 @@ class Youtube2Zim:
         }
         if self.all_subtitles:
             options.update({"writeautomaticsub": True})
+
+        if self.subset and self.subset_size:
+            total_size = 0
+            videos_ids_subset = []
+            for video_id in self.videos_ids:
+                video_size = yt_dlp.YoutubeDL(options).extract_info(
+                    video_id, download=False
+                )["filesize_approx"] / 1024 / 1024
+                if total_size + video_size <= self.subset_size:
+                    total_size += video_size
+                    videos_ids_subset.append(video_id)
+                    if video_id == self.videos_ids[-1]:
+                        self.videos_ids = videos_ids_subset
+                        break
+                else:
+                    self.videos_ids = videos_ids_subset
+                    break
 
         # find number of actuall parallel workers
         nb_videos = len(self.videos_ids)
@@ -725,7 +742,7 @@ class Youtube2Zim:
         """download video file and thumbnail for all videos in batch
 
         returning succeeded and failed video ids"""
-
+        
         succeeded = []
         failed = []
         for video_id in videos_ids:
