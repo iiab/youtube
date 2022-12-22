@@ -135,10 +135,10 @@ class Youtube2Zim:
         log =self.output_dir / "run.log"
         if not log.exists() or log.stat().st_size == 0:
             with open(log, "a") as f:
-                f.write(f"Log file created at {datetime.datetime.now()}\n")
+                f.write(f"Log file created at {datetime.datetime.now()}\n====================\n")
         if log.exists() and log.stat().st_size > 0:
             with open(log, "a") as f:
-                f.write(f"\n\n\nLog for {self.name} started on {datetime.datetime.now()}\n")
+                f.write(f"\n\n\nLog for {self.name} started on {datetime.datetime.now()}\n====================\n")
 
         # process-related
         self.playlists = []
