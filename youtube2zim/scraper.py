@@ -53,7 +53,6 @@ from .youtube import (
     get_channel_json,
     get_videos_authors_info,
     get_videos_json,
-    replace_titles,
     save_channel_branding,
     skip_deleted_videos,
     skip_outofrange_videos,
@@ -85,7 +84,6 @@ class Youtube2Zim:
         dateafter,
         use_any_optimized_version,
         s3_url_with_credentials,
-        custom_titles,
         title=None,
         description=None,
         creator=None,
@@ -122,7 +120,6 @@ class Youtube2Zim:
         self.banner_image = banner_image
         self.main_color = main_color
         self.secondary_color = secondary_color
-        self.custom_titles = custom_titles
 
         # directory setup
         self.output_dir = Path(output_dir).expanduser().resolve()
@@ -484,10 +481,6 @@ class Youtube2Zim:
             for playlist in self.playlists:
                 videos_json = get_videos_json(playlist.playlist_id)
                 # filter in videos within date range and filter away deleted videos
-                # we replace videos titles if --custom-titles is used
-                if self.custom_titles:
-                    replace_titles(videos_json, self.custom_titles)
-                # we filter out videos that are out of range and deleted
                 skip_outofrange = functools.partial(
                     skip_outofrange_videos, self.dateafter
                 )
@@ -972,9 +965,6 @@ class Youtube2Zim:
                 playlist_videos = load_json(
                     self.cache_dir, f"playlist_{playlist.playlist_id}_videos"
                 )
-                # replace video titles if --custom-titles is used
-                if self.custom_titles:
-                    replace_titles(playlist_videos, self.custom_titles)
                 # filtering-out missing ones (deleted or not downloaded)
                 playlist_videos = list(filter(skip_deleted_videos, playlist_videos))
                 playlist_videos = list(filter(is_present, playlist_videos))
