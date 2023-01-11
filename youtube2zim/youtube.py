@@ -3,7 +3,9 @@
 # vim: ai ts=4 sts=4 et sw=4 nu
 
 import requests
+from contextlib import ExitStack
 from dateutil import parser as dt_parser
+from pytube import extract
 from zimscraperlib.download import stream_file
 from zimscraperlib.image.transformation import resize_image
 
@@ -190,6 +192,64 @@ def get_videos_json(playlist_id):
 
     save_json(YOUTUBE.cache_dir, fname, items)
     return items
+
+# Replace some video titles reading 2 text files, one for the video id and one for the title (called with --custom-titles)
+def replace_titles(items, custom_titles):
+    """replace video titles with custom titles from file"""
+    # get the list of custom titles files
+    logger.debug(f"found {len(custom_titles)} custom titles files")
+    # raise an error if there are not exactly 2 custom titles files
+    if len(custom_titles) == 0:
+        logger.error("no custom titles files found")
+        raise ValueError("no custom titles files found")
+    elif len(custom_titles) == 1:
+        logger.error("only one custom titles file found (need one for titles and one for ids)")
+        raise ValueError("only one custom titles file found")
+    elif len(custom_titles) > 2:
+        logger.error("too many custom titles files found (need one for titles and one for ids)")
+        raise ValueError("too many custom titles files found")
+    custom_titles_files = custom_titles
+    titles = []
+    ids = []
+
+    # iterate through the files in custom_titles_files
+    with ExitStack() as stack:
+        files = [stack.enter_context(open(fname)) for fname in custom_titles_files]
+        for f in files:
+            # log the number of lines in each file
+            logger.debug(f"found {len(f.readlines())} custom titles in {f.name}")
+            # reset the file pointer to the beginning of the file
+            f.seek(0)
+            # iterate through the lines in the file
+            for line in f:
+                if line.startswith("https://"):
+                    # if the line starts with https://, extract the video id from the url
+                    ids.append(extract.video_id(line))
+                    logger.debug(f"found video id {ids[-1]}")
+                else:
+                    # otherwise, append the line to the titles list
+                    titles.append(line.rstrip())
+                    logger.debug(f"found title {titles[-1]}")
+        
+        # check that the number of titles and ids are the same
+        if len(titles) != len(ids):
+            logger.error(
+                f"number of titles ({len(titles)}) and ids ({len(ids)}) do not match"
+            )
+            raise ValueError("number of titles and ids do not match")
+        
+        # check if there are duplicate ids
+        if len(ids) != len(set(ids)):
+            logger.error(f"duplicate ids found: {item for item, count in collections.Counter(ids).items() if count > 1}")
+
+    # iterate through the json file and replace the title with the title from the list of titles
+    v_index = 0
+    for item in items:
+        if v_index < len(ids):
+            if item["contentDetails"]["videoId"] == ids[v_index]:
+                logger.info(f"replacing {item['snippet']['title']} with {titles[v_index]}")
+                item["snippet"]["title"] = titles[v_index]
+                v_index += 1
 
 
 def get_videos_authors_info(videos_ids):
