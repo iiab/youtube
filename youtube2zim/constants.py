@@ -31,21 +31,8 @@ YOUTUBE_LANG_MAP = {
     "sh": "srp",  # Serbian
 }
 
-FORMAT = "[%(name)s: %(asctime)s] %(levelname)s: %(message)s"
+logger = getLogger(NAME, level=logging.DEBUG)
 
-# create "/output" directory if it doesn't exist yet and write "run.log" file
-log = pathlib.Path("/output").joinpath("run.log")
-log.parent.mkdir(parents=True, exist_ok=True)
-log.touch()
-
-# create logger
-logger = getLogger(
-    NAME,
-    level=logging.DEBUG,
-    file=log,
-    file_format=FORMAT,
-    file_level=logging.DEBUG,
-)
 
 class Youtube:
     def __init__(self):
