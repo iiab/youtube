@@ -743,7 +743,7 @@ class Youtube2Zim:
         """download video file and thumbnail for all videos in batch
 
         returning succeeded and failed video ids"""
-        
+
         succeeded = []
         failed = []
         for video_id in videos_ids:
