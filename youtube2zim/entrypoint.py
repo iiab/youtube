@@ -26,7 +26,7 @@ def main():
     parser.add_argument(
         "--subset-by", help="Subset of collection to download",
         choices = ["recent", "views", "views-per-year"],
-        default="recent",
+        default="views-per-year",
         dest="subset_by",
     )
     parser.add_argument(
