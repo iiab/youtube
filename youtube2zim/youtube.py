@@ -195,7 +195,7 @@ def get_videos_json(playlist_id):
     save_json(YOUTUBE.cache_dir, fname, items)
     return items
 
-def subset_videos(videos, subset, max_videos):
+def subset_videos_json(videos, subset_by, subset_videos):
     """make a list of popular or recent videos"""
     playlist_id = videos[0]["snippet"]["playlistId"]
     video_ids = [video["contentDetails"]["videoId"] for video in videos]
@@ -221,11 +221,11 @@ def subset_videos(videos, subset, max_videos):
     for video in videos:
         video["statistics"] = video_stats[video["contentDetails"]["videoId"]]
     # we sort the videos
-    if subset == "popular":
+    if subset_by == "views":
         videos = sorted(videos, key=lambda video: video["statistics"]["viewCount"], reverse=True)
-    elif subset == "recent":
+    elif subset_by == "recent":
         videos = sorted(videos, key=lambda video: video["snippet"]["publishedAt"], reverse=True)
-    elif subset == "viewed-year":
+    elif subset_by == "views-per-year":
         for video in videos:
             views = video["statistics"]["viewCount"]
             published_at = video["snippet"]["publishedAt"]
@@ -235,7 +235,7 @@ def subset_videos(videos, subset, max_videos):
             video["statistics"]["views_per_year"] = int(views) / (years + 1)
         videos = sorted(videos, key=lambda video: video["statistics"]["views_per_year"], reverse=True)
     # we make a subset of the videos
-    if max_videos is not None:
+    if subset_videos is not None:
         videos = videos[:max_videos]
     save_json(YOUTUBE.cache_dir, f"playlist_{playlist_id}_videos", videos)
     return videos
