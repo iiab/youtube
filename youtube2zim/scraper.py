@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import subprocess
+import pandas as pd
 import tempfile
 from gettext import gettext as _
 from pathlib import Path
@@ -481,8 +482,25 @@ class Youtube2Zim:
             # we only return video_ids that we'll use later on. per-playlist JSON stored
             for playlist in self.playlists:
                 videos_json = get_videos_json(playlist.playlist_id)
-                if self.subset_videos:
+
+                # we filter out videos if subset is requested
+                if self.subset_videos or self.subset_by or self.subset_gb:
                     videos_json = subset_videos_json(videos_json, self.subset_by, self.subset_videos)
+                    # print a table of videos to be downloaded using pandas with the columns
+                    # video_id, title, view_count, published_at
+                    if self.subset_gb:
+                        # print a table
+                        df = pd.DataFrame(videos_json)
+                        df = df[['contentDetails', 'statistics', 'snippet']]    
+                        df['video_id'] = df['contentDetails'].apply(lambda x: x['videoId'])
+                        df['title'] = df['snippet'].apply(lambda x: x['title'])
+                        df['view_count'] = df['statistics'].apply(lambda x: x['viewCount'])
+                        df['published_at'] = df['snippet'].apply(lambda x: x['publishedAt'])
+                        df = df[['video_id', 'title', 'view_count', 'published_at']]
+                        df.to_csv(self.output_dir / "table.csv", index=False)
+                        print(df)
+                        # 
+                        # exit(0)
 
                 # we replace videos titles if --custom-titles is used
                 if self.custom_titles:
