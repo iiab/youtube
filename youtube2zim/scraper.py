@@ -17,7 +17,6 @@ import os
 import re
 import shutil
 import subprocess
-import pandas as pd
 import tempfile
 from gettext import gettext as _
 from pathlib import Path
@@ -483,25 +482,6 @@ class Youtube2Zim:
             for playlist in self.playlists:
                 videos_json = get_videos_json(playlist.playlist_id)
 
-                # we filter out videos if subset is requested
-                if self.subset_videos or self.subset_by or self.subset_gb:
-                    videos_json = subset_videos_json(videos_json, self.subset_by, self.subset_videos)
-                    # print a table of videos to be downloaded using pandas with the columns
-                    # video_id, title, view_count, published_at
-                    if self.subset_gb:
-                        # print a table
-                        df = pd.DataFrame(videos_json)
-                        df = df[['contentDetails', 'statistics', 'snippet']]    
-                        df['video_id'] = df['contentDetails'].apply(lambda x: x['videoId'])
-                        df['title'] = df['snippet'].apply(lambda x: x['title'])
-                        df['view_count'] = df['statistics'].apply(lambda x: x['viewCount'])
-                        df['published_at'] = df['snippet'].apply(lambda x: x['publishedAt'])
-                        df = df[['video_id', 'title', 'view_count', 'published_at']]
-                        df.to_csv(self.output_dir / "table.csv", index=False)
-                        print(df)
-                        # 
-                        # exit(0)
-
                 # we replace videos titles if --custom-titles is used
                 if self.custom_titles:
                     replace_titles(videos_json, self.custom_titles)
@@ -515,7 +495,34 @@ class Youtube2Zim:
                     {v["contentDetails"]["videoId"]: v for v in filter_videos}
                 )
             save_json(self.cache_dir, "videos", all_videos)
-        self.videos_ids = [*all_videos.keys()]  # unpacking so it's subscriptable
+
+        if self.subset_by or self.subset_videos or self.subset_gb:
+            all_videos = subset_videos_json(
+                all_videos, self.subset_by, self.subset_videos, self.subset_gb
+            )
+            all_videos = {v["contentDetails"]["videoId"]: v for v in all_videos}
+            save_json(self.cache_dir, "videos", all_videos)
+
+            self.playlists[0].videos = all_videos
+            self.playlists[0].videos_count = len(all_videos)
+            self.playlists = self.playlists[:1]
+            for i, p in enumerate(self.playlists):
+                p.position = i
+
+            playlist_json = {
+                "playlist_id": self.playlists[0].playlist_id,
+                "title": self.playlists[0].title,
+                "videos_count": self.playlists[0].videos_count,
+                "videos": list(all_videos.values()),
+            }
+            # update the positions of the videos
+            for i, v in enumerate(playlist_json["videos"]):
+                v["position"] = i
+
+            save_json(self.cache_dir, f"playlist_{self.playlists[0].playlist_id}", playlist_json)
+
+        self.videos_ids = [*all_videos.keys()]
+
 
     def download_video_files(self, max_concurrency):
 
@@ -546,24 +553,6 @@ class Youtube2Zim:
         }
         if self.all_subtitles:
             options.update({"writeautomaticsub": True})
-
-        # trim the list of videos to download if we have a subset size
-        if self.subset_gb:
-            total_size = 0
-            videos_ids_subset = []
-            for video_id in self.videos_ids:
-                video_size = yt_dlp.YoutubeDL(options).extract_info(
-                    video_id, download=False
-                )["filesize_approx"] / 1024 / 1024 / 1024
-                if total_size + video_size <= self.subset_gb:
-                    total_size += video_size
-                    videos_ids_subset.append(video_id)
-                    if video_id == self.videos_ids[-1]:
-                        self.videos_ids = videos_ids_subset
-                        break
-                else:
-                    self.videos_ids = videos_ids_subset
-                    break
 
         # find number of actuall parallel workers
         nb_videos = len(self.videos_ids)

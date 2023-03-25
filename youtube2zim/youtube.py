@@ -3,6 +3,7 @@
 # vim: ai ts=4 sts=4 et sw=4 nu
 
 import requests
+import yt_dlp
 
 from contextlib import ExitStack
 from dateutil import parser as dt_parser
@@ -177,7 +178,7 @@ def get_videos_json(playlist_id):
             PLAYLIST_ITEMS_API,
             params={
                 "playlistId": playlist_id,
-                "part": "snippet,contentDetails",
+                "part": "snippet,contentDetails,status",
                 "key": YOUTUBE.api_key,
                 "maxResults": RESULTS_PER_PAGE,
                 "pageToken": page_token,
@@ -195,11 +196,13 @@ def get_videos_json(playlist_id):
     save_json(YOUTUBE.cache_dir, fname, items)
     return items
 
-def subset_videos_json(videos, subset_by, subset_videos):
-    """make a list of popular or recent videos"""
-    playlist_id = videos[0]["snippet"]["playlistId"]
-    video_ids = [video["contentDetails"]["videoId"] for video in videos]
-    # we get the video statistics via Youtube API 
+def subset_videos_json(videos, subset_by, subset_videos, subset_gb):
+    """filter the videos by a subset of videos"""
+    options = {
+            "ignoreerrors": True,
+        }
+    # query the youtube api for the video statistics
+    video_ids = [video["contentDetails"]["videoId"] for video in videos.values()]
     video_stats = {}
     for i in range(0, len(video_ids), 50):
         video_ids_chunk = video_ids[i : i + 50]
@@ -217,29 +220,51 @@ def subset_videos_json(videos, subset_by, subset_videos):
         video_stats_json = req.json()
         for video in video_stats_json["items"]:
             video_stats[video["id"]] = video["statistics"]
-        for video_id in video_ids_chunk:
-            if video_id not in video_stats:
-                video_stats[video_id] = {"viewCount": 0, "likeCount": 0, "dislikeCount": 0}
-    for video in videos:
+    # we add the statistics to the videos
+    for video in videos.values():
         video["statistics"] = video_stats[video["contentDetails"]["videoId"]]
+    # we sort the videos by views or recent or views-per-year
     if subset_by == "views":
+        videos = list(videos.values())
         videos = sorted(videos, key=lambda video: video["statistics"]["viewCount"], reverse=True)
     elif subset_by == "recent":
+        videos = list(videos.values())
         videos = sorted(videos, key=lambda video: video["snippet"]["publishedAt"], reverse=True)
     elif subset_by == "views-per-year":
-        for video in videos:
+        for video in videos.values():
             views = video["statistics"]["viewCount"]
             published_at = video["snippet"]["publishedAt"]
             now = datetime.now()
             published_at = datetime.strptime(published_at, "%Y-%m-%dT%H:%M:%SZ")
             years = now.year - published_at.year
             video["statistics"]["views_per_year"] = int(views) / (years + 1)
+        videos = list(videos.values())
         videos = sorted(videos, key=lambda video: video["statistics"]["views_per_year"], reverse=True)
-    # we limit the number of videos if needed
-    if subset_videos is not None:
-        videos = videos[:subset_videos]
-    save_json(YOUTUBE.cache_dir, f"playlist_{playlist_id}_videos", videos)
+    if subset_videos != 0:
+        videos_ids = [video["contentDetails"]["videoId"] for video in videos]
+        videos_ids_subset = videos_ids[:subset_videos]
+        videos = [video for video in videos if video["contentDetails"]["videoId"] in videos_ids_subset]
+    if subset_gb != 0:
+        total_size = 0
+        videos_ids_subset = []
+        for video in videos:
+            video_id = video["contentDetails"]["videoId"]
+            video_size = yt_dlp.YoutubeDL(options).extract_info(
+                video_id, download=False
+            )["filesize_approx"] / 1024 / 1024 / 1024
+            if total_size + video_size <= subset_gb:
+                total_size += video_size
+                videos_ids_subset.append(video_id)
+                if video_id == videos[-1]["contentDetails"]["videoId"]:
+                    videos_ids = videos_ids_subset
+                    videos = [video for video in videos if video["contentDetails"]["videoId"] in videos_ids]
+                    break
+            else:
+                videos_ids = videos_ids_subset
+                videos = [video for video in videos if video["contentDetails"]["videoId"] in videos_ids]
+                break
     return videos
+
 
 # Replace some video titles reading 2 text files, one for the video id and one for the title (called with --custom-titles)
 def replace_titles(items, custom_titles):
@@ -384,10 +409,11 @@ def save_channel_branding(channels_dir, channel_id, save_banner=False):
 
 
 def skip_deleted_videos(item):
-    """filter func to filter-out deleted videos from list"""
+    """filter func to filter-out deleted, unavailable or private videos"""
     return (
         item["snippet"]["title"] != "Deleted video"
         and item["snippet"]["description"] != "This video is unavailable."
+        and item["status"]["privacyStatus"] != "private"  
     )
 
 

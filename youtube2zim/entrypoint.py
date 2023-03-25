@@ -26,7 +26,7 @@ def main():
     parser.add_argument(
         "--subset-by", help="Subset of collection to download",
         choices = ["recent", "views", "views-per-year"],
-        default="views-per-year",
+        default="recent",
         dest="subset_by",
     )
     parser.add_argument(
@@ -39,6 +39,7 @@ def main():
         "--subset-gb",
         help="Cumulative size of videos to download (in GB)",
         type=float,
+        default = 0,
         dest="subset_gb",
     )
     parser.add_argument(
@@ -139,7 +140,7 @@ def main():
 
     parser.add_argument(
         "--creator",
-        help="Name of content creator. Defaults to Channel name or “Youtue Channels”",
+        help="Name of content creator. Defaults to Channel name or “Youtube Channels”",
     )
 
     parser.add_argument(
