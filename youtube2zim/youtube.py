@@ -246,10 +246,15 @@ def replace_titles(items, custom_titles):
     v_index = 0
     for item in items:
         if v_index < len(ids):
-            if item["contentDetails"]["videoId"] == ids[v_index]:
+            while v_index < len(ids) and item["contentDetails"]["videoId"] != ids[v_index]:
+                v_index += 1
+            if v_index < len(ids):
                 logger.info(f"replacing {item['snippet']['title']} with {titles[v_index]}")
                 item["snippet"]["title"] = titles[v_index]
                 v_index += 1
+        else:
+            logger.debug(f"no more titles to replace")
+            break
 
 
 def get_videos_authors_info(videos_ids):
