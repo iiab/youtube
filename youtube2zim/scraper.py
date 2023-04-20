@@ -305,9 +305,9 @@ class Youtube2Zim:
         )
         if failed:
             logger.error(f"{len(failed)} video(s) failed to download: {failed}")
-            if len(failed) >= len(succeeded):
-                logger.critical("More than half of videos failed. exiting")
-                raise IOError("Too much videos failed to download")
+            if len(failed) >= 1:
+                logger.critical("Exiting due to failure downloading one or more videos")
+                raise IOError("Video downloading failure")
 
         logger.info("retrieve channel-info for all videos (author details)")
         get_videos_authors_info(succeeded)
