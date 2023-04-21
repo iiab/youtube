@@ -53,6 +53,7 @@ from .youtube import (
     get_channel_json,
     get_videos_authors_info,
     get_videos_json,
+    subset_videos_json,
     replace_titles,
     save_channel_branding,
     skip_deleted_videos,
@@ -65,6 +66,9 @@ class Youtube2Zim:
         self,
         collection_type,
         youtube_id,
+        subset_by,
+        subset_videos,
+        subset_gb,
         api_key,
         video_format,
         low_quality,
@@ -101,6 +105,9 @@ class Youtube2Zim:
         self.youtube_id = youtube_id
         self.api_key = api_key
         self.dateafter = dateafter
+        self.subset_by = subset_by
+        self.subset_videos = subset_videos
+        self.subset_gb = subset_gb
 
         # video-encoding info
         self.video_format = video_format
@@ -474,7 +481,7 @@ class Youtube2Zim:
             # we only return video_ids that we'll use later on. per-playlist JSON stored
             for playlist in self.playlists:
                 videos_json = get_videos_json(playlist.playlist_id)
-                # filter in videos within date range and filter away deleted videos
+
                 # we replace videos titles if --custom-titles is used
                 if self.custom_titles:
                     replace_titles(videos_json, self.custom_titles)
@@ -488,7 +495,34 @@ class Youtube2Zim:
                     {v["contentDetails"]["videoId"]: v for v in filter_videos}
                 )
             save_json(self.cache_dir, "videos", all_videos)
-        self.videos_ids = [*all_videos.keys()]  # unpacking so it's subscriptable
+
+        if self.subset_by or self.subset_videos or self.subset_gb:
+            all_videos = subset_videos_json(
+                all_videos, self.subset_by, self.subset_videos, self.subset_gb
+            )
+            all_videos = {v["contentDetails"]["videoId"]: v for v in all_videos}
+            save_json(self.cache_dir, "videos", all_videos)
+
+            self.playlists[0].videos = all_videos
+            self.playlists[0].videos_count = len(all_videos)
+            self.playlists = self.playlists[:1]
+            for i, p in enumerate(self.playlists):
+                p.position = i
+
+            playlist_json = {
+                "playlist_id": self.playlists[0].playlist_id,
+                "title": self.playlists[0].title,
+                "videos_count": self.playlists[0].videos_count,
+                "videos": list(all_videos.values()),
+            }
+            # update the positions of the videos
+            for i, v in enumerate(playlist_json["videos"]):
+                v["position"] = i
+
+            save_json(self.cache_dir, f"playlist_{self.playlists[0].playlist_id}", playlist_json)
+
+        self.videos_ids = [*all_videos.keys()]
+
 
     def download_video_files(self, max_concurrency):
 

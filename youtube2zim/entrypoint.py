@@ -24,7 +24,28 @@ def main():
         dest="collection_type",
     )
     parser.add_argument(
-        "--id", help="Youtube ID of the collection", required=True, dest="youtube_id"
+        "--subset-by", help="Subset of collection to download",
+        choices = ["recent", "views", "views-per-year"],
+        default="recent",
+        dest="subset_by",
+    )
+    parser.add_argument(
+        "--subset-videos",
+        help="Maximum number of videos to download",
+        type=int,
+        dest="subset_videos",
+    )
+    parser.add_argument(
+        "--subset-gb",
+        help="Cumulative size of videos to download (in GB)",
+        type=float,
+        default = 0,
+        dest="subset_gb",
+    )
+    parser.add_argument(
+        "--id", help="Youtube ID of the collection",
+        required=True,
+        dest="youtube_id",
     )
     parser.add_argument("--api-key", help="Youtube API Token", required=True)
     parser.add_argument(
@@ -119,7 +140,7 @@ def main():
 
     parser.add_argument(
         "--creator",
-        help="Name of content creator. Defaults to Channel name or “Youtue Channels”",
+        help="Name of content creator. Defaults to Channel name or “Youtube Channels”",
     )
 
     parser.add_argument(
@@ -214,8 +235,10 @@ def main():
 
     args = parser.parse_args()
     logger.setLevel(logging.DEBUG if args.debug else logging.INFO)
+    
 
     try:
+        # Check for invalid values
         if args.max_concurrency < 1:
             raise ValueError(f"Invalid concurrency value: {args.max_concurrency}")
         scraper = Youtube2Zim(**dict(args._get_kwargs()), youtube_store=YOUTUBE)
@@ -225,7 +248,6 @@ def main():
         if args.debug:
             logger.exception(exc)
         return 1
-
 
 if __name__ == "__main__":
     sys.exit(main())

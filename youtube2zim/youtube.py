@@ -3,8 +3,11 @@
 # vim: ai ts=4 sts=4 et sw=4 nu
 
 import requests
+import yt_dlp
+
 from contextlib import ExitStack
 from dateutil import parser as dt_parser
+from datetime import datetime
 from pytube import extract
 from zimscraperlib.download import stream_file
 from zimscraperlib.image.transformation import resize_image
@@ -175,7 +178,7 @@ def get_videos_json(playlist_id):
             PLAYLIST_ITEMS_API,
             params={
                 "playlistId": playlist_id,
-                "part": "snippet,contentDetails",
+                "part": "snippet,contentDetails,status",
                 "key": YOUTUBE.api_key,
                 "maxResults": RESULTS_PER_PAGE,
                 "pageToken": page_token,
@@ -192,6 +195,76 @@ def get_videos_json(playlist_id):
 
     save_json(YOUTUBE.cache_dir, fname, items)
     return items
+
+def subset_videos_json(videos, subset_by, subset_videos, subset_gb):
+    """filter the videos by a subset of videos"""
+    options = {
+            "ignoreerrors": True,
+        }
+    # query the youtube api for the video statistics
+    video_ids = [video["contentDetails"]["videoId"] for video in videos.values()]
+    video_stats = {}
+    for i in range(0, len(video_ids), 50):
+        video_ids_chunk = video_ids[i : i + 50]
+        req = requests.get(
+            VIDEOS_API,
+            params={
+                "id": ",".join(video_ids_chunk),
+                "part": "statistics",
+                "key": YOUTUBE.api_key,
+            },
+        )
+        if req.status_code > 400:
+            logger.error(f"HTTP {req.status_code} Error response: {req.text}")
+        req.raise_for_status()
+        video_stats_json = req.json()
+        for video in video_stats_json["items"]:
+            video_stats[video["id"]] = video["statistics"]
+    # we add the statistics to the videos
+    for video in videos.values():
+        video["statistics"] = video_stats[video["contentDetails"]["videoId"]]
+    # we sort the videos by views or recent or views-per-year
+    if subset_by == "views":
+        videos = list(videos.values())
+        videos = sorted(videos, key=lambda video: video["statistics"]["viewCount"], reverse=True)
+    elif subset_by == "recent":
+        videos = list(videos.values())
+        videos = sorted(videos, key=lambda video: video["snippet"]["publishedAt"], reverse=True)
+    elif subset_by == "views-per-year":
+        for video in videos.values():
+            views = video["statistics"]["viewCount"]
+            published_at = video["snippet"]["publishedAt"]
+            now = datetime.now()
+            published_at = datetime.strptime(published_at, "%Y-%m-%dT%H:%M:%SZ")
+            years = now.year - published_at.year
+            video["statistics"]["views_per_year"] = int(views) / (years + 1)
+        videos = list(videos.values())
+        videos = sorted(videos, key=lambda video: video["statistics"]["views_per_year"], reverse=True)
+    if subset_videos != 0:
+        videos_ids = [video["contentDetails"]["videoId"] for video in videos]
+        videos_ids_subset = videos_ids[:subset_videos]
+        videos = [video for video in videos if video["contentDetails"]["videoId"] in videos_ids_subset]
+    if subset_gb != 0:
+        total_size = 0
+        videos_ids_subset = []
+        for video in videos:
+            video_id = video["contentDetails"]["videoId"]
+            video_size = yt_dlp.YoutubeDL(options).extract_info(
+                video_id, download=False
+            )["filesize_approx"] / 1024 / 1024 / 1024
+            if total_size + video_size <= subset_gb:
+                total_size += video_size
+                videos_ids_subset.append(video_id)
+                if video_id == videos[-1]["contentDetails"]["videoId"]:
+                    videos_ids = videos_ids_subset
+                    videos = [video for video in videos if video["contentDetails"]["videoId"] in videos_ids]
+                    break
+            else:
+                videos_ids = videos_ids_subset
+                videos = [video for video in videos if video["contentDetails"]["videoId"] in videos_ids]
+                break
+    return videos
+
 
 # Replace some video titles reading 2 text files, one for the video id and one for the title (called with --custom-titles)
 def replace_titles(items, custom_titles):
@@ -216,18 +289,13 @@ def replace_titles(items, custom_titles):
     with ExitStack() as stack:
         files = [stack.enter_context(open(fname)) for fname in custom_titles_files]
         for f in files:
-            # log the number of lines in each file
             logger.debug(f"found {len(f.readlines())} custom titles in {f.name}")
-            # reset the file pointer to the beginning of the file
             f.seek(0)
-            # iterate through the lines in the file
             for line in f:
                 if line.startswith("https://"):
-                    # if the line starts with https://, extract the video id from the url
                     ids.append(extract.video_id(line))
                     logger.debug(f"found video id {ids[-1]}")
                 else:
-                    # otherwise, append the line to the titles list
                     titles.append(line.rstrip())
                     logger.debug(f"found title {titles[-1]}")
         
@@ -346,10 +414,11 @@ def save_channel_branding(channels_dir, channel_id, save_banner=False):
 
 
 def skip_deleted_videos(item):
-    """filter func to filter-out deleted videos from list"""
+    """filter func to filter-out deleted, unavailable or private videos"""
     return (
         item["snippet"]["title"] != "Deleted video"
         and item["snippet"]["description"] != "This video is unavailable."
+        and item["status"]["privacyStatus"] != "private"  
     )
 
 
